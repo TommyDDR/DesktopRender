@@ -11,13 +11,12 @@
 Opt("GUIOnEventMode", 1)
 Opt("MustDeclareVars", 1)
 
-Global Const $REFRESH_MS = 20
+Global Const $DEFAULT_FPS = 30
 Global Const $WDA_EXCLUDEFROMCAPTURE = 0x00000011
 Global Const $MAIN_STYLE = BitOR($WS_CAPTION, $WS_POPUP, $WS_SYSMENU, $WS_MINIMIZEBOX)
 Global Const $PREVIEW_STYLE_NORMAL = BitOR($WS_MINIMIZEBOX, $WS_CAPTION, $WS_POPUP, $WS_SYSMENU)
-Global Const $PREVIEW_STYLE_POPUP = $WS_POPUP
 Global Const $BORDER = 12
-Global Const $MAIN_WIDTH = 540
+Global Const $MAIN_WIDTH = 700
 Global Const $MAIN_HEIGHT = 170
 Global Const $MAIN_PADDING = $BORDER
 Global Const $INFO_HEIGHT = 20
@@ -25,7 +24,7 @@ Global Const $INFO_TOP = $MAIN_HEIGHT - $INFO_HEIGHT
 Global Const $PREVIEW_WIDTH = 676
 Global Const $PREVIEW_HEIGHT = 412
 Global Const $PREVIEW_WINDOW_GAP = 16
-Global Const $SETTINGS_INI = @ScriptDir & "\winZoom.ini"
+Global Const $SETTINGS_INI = @ScriptDir & "\DesktopRender.ini"
 Global Const $SETTINGS_SECTION = "Selection"
 Global Const $SETTINGS_UI_SECTION = "UI"
 Global Const $SETTINGS_PROFILE_PREFIX = "Profile_"
@@ -37,18 +36,20 @@ Global Const $BTN_PAUSE_LEFT = 174
 Global Const $BTN_PAUSE_WIDTH = 90
 Global Const $BTN_RECORD_LEFT = 276
 Global Const $BTN_RECORD_WIDTH = 110
-Global Const $CHK_TOP_TOP = 18
-Global Const $CHK_TOP_LEFT = 394
+Global Const $BTN_RECORDINGS_LEFT = 398
+Global Const $BTN_RECORDINGS_WIDTH = 210
+Global Const $CHK_TOP_TOP = 52
+Global Const $CHK_TOP_LEFT = 144
 Global Const $CHK_TOP_WIDTH = 140
 Global Const $SECOND_ROW_TOP = 52
 Global Const $CHK_AFFINITY_LEFT = $BORDER
 Global Const $CHK_AFFINITY_WIDTH = 120
-Global Const $CHK_FOLLOW_LEFT = 150
+Global Const $CHK_FOLLOW_LEFT = 296
 Global Const $CHK_FOLLOW_WIDTH = 110
-Global Const $CHK_POPUP_LEFT = 280
-Global Const $CHK_POPUP_WIDTH = 110
-Global Const $CHK_ACTIVE_LEFT = 398
-Global Const $CHK_ACTIVE_WIDTH = 130
+Global Const $CHK_ACTIVE_LEFT = 418
+Global Const $CHK_ACTIVE_WIDTH = 110
+Global Const $CHK_NEXT_ACTIVE_LEFT = 540
+Global Const $CHK_NEXT_ACTIVE_WIDTH = 136
 Global Const $CHK_HEIGHT = 20
 Global Const $THIRD_ROW_TOP = 82
 Global Const $LBL_PROFILE_LEFT = $BORDER
@@ -58,11 +59,17 @@ Global Const $CMB_PROFILE_LEFT = 78
 Global Const $CMB_PROFILE_TOP = $THIRD_ROW_TOP
 Global Const $CMB_PROFILE_WIDTH = 170
 Global Const $CMB_PROFILE_HEIGHT = 25
+Global Const $LBL_REFRESH_LEFT = 270
+Global Const $LBL_REFRESH_TOP = $THIRD_ROW_TOP + 4
+Global Const $LBL_REFRESH_WIDTH = 20
+Global Const $CMB_REFRESH_LEFT = 300
+Global Const $CMB_REFRESH_TOP = $THIRD_ROW_TOP
+Global Const $CMB_REFRESH_WIDTH = 72
+Global Const $CMB_REFRESH_HEIGHT = 25
 Global Const $FOURTH_ROW_TOP = 116
 Global Const $LBL_RECORD_LEFT = $BORDER
 Global Const $LBL_RECORD_TOP = $FOURTH_ROW_TOP + 2
 Global Const $LBL_RECORD_WIDTH = $MAIN_WIDTH - ($BORDER * 2)
-Global Const $FFMPEG_FRAME_RATE = 30
 Global Const $RECORDINGS_DIR = @ScriptDir & "\recordings"
 
 Global $g_hMain = 0
@@ -71,13 +78,16 @@ Global $g_hPreview = 0
 Global $g_idBtnSelect = 0
 Global $g_idBtnPause = 0
 Global $g_idBtnRecord = 0
+Global $g_idBtnRecordings = 0
 Global $g_idLblProfile = 0
 Global $g_idCmbProfile = 0
+Global $g_idLblRefresh = 0
+Global $g_idCmbFps = 0
 Global $g_idChkTop = 0
 Global $g_idChkAffinity = 0
 Global $g_idChkFollowMouse = 0
 Global $g_idChkFollowActive = 0
-Global $g_idChkPreviewPopup = 0
+Global $g_idChkFollowActiveNextOnly = 0
 Global $g_idLblRecord = 0
 Global $g_hPreviewDC = 0
 Global $g_hBackDC = 0
@@ -97,13 +107,14 @@ Global $g_bCfgTopmost = True
 Global $g_bCfgAffinity = True
 Global $g_bCfgFollowMouse = False
 Global $g_bCfgFollowActive = False
-Global $g_bCfgPreviewPopup = False
+Global $g_bCfgFollowActiveNextOnly = True
 Global $g_iCfgMainX = Default
 Global $g_iCfgMainY = Default
 Global $g_iCfgPreviewX = Default
 Global $g_iCfgPreviewY = Default
 Global $g_iCfgPreviewW = $PREVIEW_WIDTH
 Global $g_iCfgPreviewH = $PREVIEW_HEIGHT
+Global $g_iFps = $DEFAULT_FPS
 Global $g_sCfgProfile = "Whatsapp"
 Global $g_sCfgRecordFormat = "mp4"
 Global $g_sCfgRecordCodec = "libx264"
@@ -112,6 +123,7 @@ Global $g_sCfgRecordContainerArgs = " -movflags +faststart "
 Global $g_bRecording = False
 Global $g_iRecordingPid = 0
 Global $g_sRecordingFile = ""
+Global $g_hFollowActiveTarget = 0
 
 _LoadUiSettingsFromIni()
 _LoadSelectionFromIni()
@@ -120,7 +132,7 @@ GUIRegisterMsg($WM_ERASEBKGND, "App_WMEraseBkgnd")
 $g_hRefreshTimer = TimerInit()
 
 While $g_bRunning
-    If TimerDiff($g_hRefreshTimer) >= $REFRESH_MS Then
+    If TimerDiff($g_hRefreshTimer) >= _GetRefreshIntervalMs() Then
         _RefreshPreview()
         $g_hRefreshTimer = TimerInit()
     EndIf
@@ -134,44 +146,54 @@ If $g_hPreview <> 0 Then GUIDelete($g_hPreview)
 GUIDelete($g_hMain)
 
 Func _CreateMainWindow()
-    $g_hMain = GUICreate("winZoom", $MAIN_WIDTH, $MAIN_HEIGHT, $g_iCfgMainX, $g_iCfgMainY, $MAIN_STYLE, $WS_EX_COMPOSITED)
+    $g_hMain = GUICreate("DesktopRender", $MAIN_WIDTH, $MAIN_HEIGHT, $g_iCfgMainX, $g_iCfgMainY, $MAIN_STYLE, $WS_EX_COMPOSITED)
     GUISetOnEvent($GUI_EVENT_CLOSE, "_OnMainClose", $g_hMain)
 
     $g_idBtnSelect = GUICtrlCreateButton("Selectionner une zone", $BTN_SELECT_LEFT, $BTN_TOP, $BTN_SELECT_WIDTH, $BTN_HEIGHT)
     $g_idBtnPause = GUICtrlCreateButton("Pause", $BTN_PAUSE_LEFT, $BTN_TOP, $BTN_PAUSE_WIDTH, $BTN_HEIGHT)
     $g_idBtnRecord = GUICtrlCreateButton("Enregistrer", $BTN_RECORD_LEFT, $BTN_TOP, $BTN_RECORD_WIDTH, $BTN_HEIGHT)
+    $g_idBtnRecordings = GUICtrlCreateButton("Aller au dossier enregistrements", $BTN_RECORDINGS_LEFT, $BTN_TOP, $BTN_RECORDINGS_WIDTH, $BTN_HEIGHT)
     $g_idChkTop = GUICtrlCreateCheckbox("Toujours au premier plan", $CHK_TOP_LEFT, $CHK_TOP_TOP, $CHK_TOP_WIDTH, $CHK_HEIGHT)
     $g_idChkAffinity = GUICtrlCreateCheckbox("Exclure de la capture", $CHK_AFFINITY_LEFT, $SECOND_ROW_TOP, $CHK_AFFINITY_WIDTH, $CHK_HEIGHT)
     $g_idChkFollowMouse = GUICtrlCreateCheckbox("Suivre la souris", $CHK_FOLLOW_LEFT, $SECOND_ROW_TOP, $CHK_FOLLOW_WIDTH, $CHK_HEIGHT)
-    $g_idChkPreviewPopup = GUICtrlCreateCheckbox("Changer le style", $CHK_POPUP_LEFT, $SECOND_ROW_TOP, $CHK_POPUP_WIDTH, $CHK_HEIGHT)
     $g_idChkFollowActive = GUICtrlCreateCheckbox("Suivre fenetre", $CHK_ACTIVE_LEFT, $SECOND_ROW_TOP, $CHK_ACTIVE_WIDTH, $CHK_HEIGHT)
+    $g_idChkFollowActiveNextOnly = GUICtrlCreateCheckbox("Seulement la prochaine", $CHK_NEXT_ACTIVE_LEFT, $SECOND_ROW_TOP, $CHK_NEXT_ACTIVE_WIDTH, $CHK_HEIGHT)
     $g_idLblProfile = GUICtrlCreateLabel("Profil video", $LBL_PROFILE_LEFT, $LBL_PROFILE_TOP, $LBL_PROFILE_WIDTH, $INFO_HEIGHT)
     $g_idCmbProfile = GUICtrlCreateCombo("", $CMB_PROFILE_LEFT, $CMB_PROFILE_TOP, $CMB_PROFILE_WIDTH, $CMB_PROFILE_HEIGHT, $CBS_DROPDOWNLIST)
+    $g_idLblRefresh = GUICtrlCreateLabel("Fps", $LBL_REFRESH_LEFT, $LBL_REFRESH_TOP, $LBL_REFRESH_WIDTH, $INFO_HEIGHT)
+    $g_idCmbFps = GUICtrlCreateCombo("", $CMB_REFRESH_LEFT, $CMB_REFRESH_TOP, $CMB_REFRESH_WIDTH, $CMB_REFRESH_HEIGHT, $CBS_DROPDOWNLIST)
     GUICtrlSetOnEvent($g_idBtnSelect, "_OnPickRegion")
     GUICtrlSetOnEvent($g_idBtnPause, "_OnTogglePause")
     GUICtrlSetOnEvent($g_idBtnRecord, "_OnToggleRecording")
+    GUICtrlSetOnEvent($g_idBtnRecordings, "_OnOpenRecordingsFolder")
     GUICtrlSetOnEvent($g_idCmbProfile, "_OnChangeProfile")
+    GUICtrlSetOnEvent($g_idCmbFps, "_OnChangeFps")
     GUICtrlSetOnEvent($g_idChkTop, "_OnToggleTopmost")
     GUICtrlSetOnEvent($g_idChkAffinity, "_OnToggleAffinity")
     GUICtrlSetOnEvent($g_idChkFollowMouse, "_OnToggleFollowMouse")
     GUICtrlSetOnEvent($g_idChkFollowActive, "_OnToggleFollowActive")
-    GUICtrlSetOnEvent($g_idChkPreviewPopup, "_OnTogglePreviewPopup")
+    GUICtrlSetOnEvent($g_idChkFollowActiveNextOnly, "_OnToggleFollowActiveNextOnly")
     GUICtrlSetResizing($g_idBtnSelect, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idBtnPause, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idBtnRecord, $GUI_DOCKALL)
+    GUICtrlSetResizing($g_idBtnRecordings, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idLblProfile, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idCmbProfile, $GUI_DOCKALL)
+    GUICtrlSetResizing($g_idLblRefresh, $GUI_DOCKALL)
+    GUICtrlSetResizing($g_idCmbFps, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idChkTop, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idChkAffinity, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idChkFollowMouse, $GUI_DOCKALL)
     GUICtrlSetResizing($g_idChkFollowActive, $GUI_DOCKALL)
-    GUICtrlSetResizing($g_idChkPreviewPopup, $GUI_DOCKALL)
+    GUICtrlSetResizing($g_idChkFollowActiveNextOnly, $GUI_DOCKALL)
     If $g_bCfgTopmost Then GUICtrlSetState($g_idChkTop, $GUI_CHECKED)
     If $g_bCfgAffinity Then GUICtrlSetState($g_idChkAffinity, $GUI_CHECKED)
     If $g_bCfgFollowMouse Then GUICtrlSetState($g_idChkFollowMouse, $GUI_CHECKED)
     If $g_bCfgFollowActive Then GUICtrlSetState($g_idChkFollowActive, $GUI_CHECKED)
-    If $g_bCfgPreviewPopup Then GUICtrlSetState($g_idChkPreviewPopup, $GUI_CHECKED)
+    If $g_bCfgFollowActiveNextOnly Then GUICtrlSetState($g_idChkFollowActiveNextOnly, $GUI_CHECKED)
     GUICtrlSetData($g_idCmbProfile, "Whatsapp|HighQuality|mobile", $g_sCfgProfile)
+    GUICtrlSetData($g_idCmbFps, "10|24|30|60", String($g_iFps))
+    _UpdateFollowActiveNextOnlyUi()
 
     $g_idInfo = GUICtrlCreateLabel("", $MAIN_PADDING, $INFO_TOP, $PREVIEW_WIDTH, $INFO_HEIGHT)
     $g_idLblRecord = GUICtrlCreateLabel("", $LBL_RECORD_LEFT, $LBL_RECORD_TOP, $LBL_RECORD_WIDTH, $INFO_HEIGHT)
@@ -180,13 +202,13 @@ Func _CreateMainWindow()
     GUICtrlSetResizing($g_idLblRecord, $GUI_DOCKALL)
     GUICtrlSetFont($g_idLblProfile, 9, 400, 0, "Segoe UI")
     GUICtrlSetFont($g_idCmbProfile, 9, 400, 0, "Segoe UI")
+    GUICtrlSetFont($g_idLblRefresh, 9, 400, 0, "Segoe UI")
+    GUICtrlSetFont($g_idCmbFps, 9, 400, 0, "Segoe UI")
     GUICtrlSetFont($g_idInfo, 9, 400, 0, "Segoe UI")
     GUICtrlSetFont($g_idLblRecord, 9, 400, 0, "Segoe UI")
 
-    Local $iPreviewStyle = $PREVIEW_STYLE_NORMAL
-    If $g_bCfgPreviewPopup Then $iPreviewStyle = $PREVIEW_STYLE_POPUP
-    Local $aPreviewSize = _GetWindowSizeForClient($g_iCfgPreviewW, $g_iCfgPreviewH, $iPreviewStyle, $WS_EX_COMPOSITED)
-    $g_hPreview = GUICreate("winZoom Preview", $aPreviewSize[0], $aPreviewSize[1], $g_iCfgPreviewX, $g_iCfgPreviewY, $iPreviewStyle, $WS_EX_COMPOSITED)
+    Local $aPreviewSize = _GetWindowSizeForClient($g_iCfgPreviewW, $g_iCfgPreviewH, $PREVIEW_STYLE_NORMAL, $WS_EX_COMPOSITED)
+    $g_hPreview = GUICreate("DesktopRender Preview", $aPreviewSize[0], $aPreviewSize[1], $g_iCfgPreviewX, $g_iCfgPreviewY, $PREVIEW_STYLE_NORMAL, $WS_EX_COMPOSITED)
     GUISetOnEvent($GUI_EVENT_CLOSE, "_OnPreviewClose", $g_hPreview)
     GUISetBkColor(0x000000, $g_hPreview)
     _EnableDoubleBuffering($g_hPreview)
@@ -203,32 +225,31 @@ Func _CreateMainWindow()
     If $g_iSelW > 0 And $g_iSelH > 0 Then _ResizeMainToRegion()
 EndFunc
 
-Func _LayoutMainWindow()
-    Local $aPos = WinGetClientSize($g_hMain)
-    If @error Then Return
-
-    GUICtrlSetPos($g_idLblProfile, $LBL_PROFILE_LEFT, $LBL_PROFILE_TOP, $LBL_PROFILE_WIDTH, $INFO_HEIGHT)
-    GUICtrlSetPos($g_idCmbProfile, $CMB_PROFILE_LEFT, $CMB_PROFILE_TOP, $CMB_PROFILE_WIDTH, $CMB_PROFILE_HEIGHT)
-    GUICtrlSetPos($g_idInfo, $MAIN_PADDING, $INFO_TOP, $aPos[0] - ($MAIN_PADDING * 2), $INFO_HEIGHT)
-    GUICtrlSetPos($g_idLblRecord, $MAIN_PADDING, $LBL_RECORD_TOP, $aPos[0] - ($MAIN_PADDING * 2), $INFO_HEIGHT)
-    _PositionPreviewWindow()
-EndFunc
-
 Func _UpdateInfo()
     Local $sState = "actif"
+    Local $bTrackedWindow = False
     If $g_bPaused Then $sState = "pause"
-    If $g_idChkFollowMouse <> 0 And GUICtrlRead($g_idChkFollowMouse) = $GUI_CHECKED Then $sState &= ", suivi souris"
-    If $g_idChkFollowActive <> 0 And GUICtrlRead($g_idChkFollowActive) = $GUI_CHECKED Then $sState &= ", suivi fenetre"
+    If $g_idChkFollowMouse <> 0 And GUICtrlRead($g_idChkFollowMouse) = $GUI_CHECKED Then $sState &= " | suivi souris"
+    If $g_idChkFollowActive <> 0 And GUICtrlRead($g_idChkFollowActive) = $GUI_CHECKED Then $sState &= " | suivi fenetre"
     If $g_bRecording Then $sState &= ", enregistrement"
 
+    If $g_idChkFollowActive <> 0 And GUICtrlRead($g_idChkFollowActive) = $GUI_CHECKED And _
+       $g_idChkFollowActiveNextOnly <> 0 And GUICtrlRead($g_idChkFollowActiveNextOnly) = $GUI_CHECKED And _
+       $g_hFollowActiveTarget <> 0 And WinExists($g_hFollowActiveTarget) Then
+        $bTrackedWindow = True
+    EndIf
+
     If $g_iSelW <= 0 Or $g_iSelH <= 0 Then
-        GUICtrlSetData($g_idInfo, "Aucune zone definie. Clique sur 'Selectionner une zone', puis trace un rectangle sur l'ecran.")
+        Local $sEmptyInfo = "Aucune zone definie. Clique sur 'Selectionner une zone', puis trace un rectangle sur l'ecran."
+        If $bTrackedWindow Then $sEmptyInfo &= " | Fenetre suivie"
+        GUICtrlSetData($g_idInfo, $sEmptyInfo)
         _UpdateRecordingInfo()
         Return
     EndIf
 
-    GUICtrlSetData($g_idInfo, _
-        "Zone: X=" & $g_iSelX & " Y=" & $g_iSelY & " L=" & $g_iSelW & " H=" & $g_iSelH & " | Rafraichissement: " & $REFRESH_MS & " ms | Etat: " & $sState)
+    Local $sInfo = "Zone: X=" & $g_iSelX & " Y=" & $g_iSelY & " L=" & $g_iSelW & " H=" & $g_iSelH & " | Fps: " & $g_iFps & " | Etat: " & $sState
+    If $bTrackedWindow Then $sInfo &= " | Fenetre suivie"
+    GUICtrlSetData($g_idInfo, $sInfo)
     _UpdateRecordingInfo()
 EndFunc
 
@@ -264,6 +285,11 @@ Func _OnToggleRecording()
     _UpdateInfo()
 EndFunc
 
+Func _OnOpenRecordingsFolder()
+    DirCreate($RECORDINGS_DIR)
+    ShellExecute($RECORDINGS_DIR)
+EndFunc
+
 Func _OnChangeProfile()
     Local $sProfile = _NormalizeProfileName(GUICtrlRead($g_idCmbProfile))
     If $sProfile = $g_sCfgProfile Then Return
@@ -275,6 +301,14 @@ Func _OnChangeProfile()
     GUICtrlSetData($g_idCmbProfile, $g_sCfgProfile)
     _SaveAllSettingsToIni()
     _UpdateInfo()
+EndFunc
+
+Func _OnChangeFps()
+    $g_iFps = _NormalizeFps(GUICtrlRead($g_idCmbFps))
+    GUICtrlSetData($g_idCmbFps, String($g_iFps))
+    $g_hRefreshTimer = TimerInit()
+    _UpdateInfo()
+    _SaveAllSettingsToIni()
 EndFunc
 
 Func _OnToggleTopmost()
@@ -295,10 +329,14 @@ EndFunc
 
 Func _OnToggleFollowMouse()
     If GUICtrlRead($g_idChkFollowMouse) = $GUI_CHECKED Then
-        If $g_idChkFollowActive <> 0 Then GUICtrlSetState($g_idChkFollowActive, $GUI_UNCHECKED)
+        If $g_idChkFollowActive <> 0 Then
+            GUICtrlSetState($g_idChkFollowActive, $GUI_UNCHECKED)
+            $g_hFollowActiveTarget = 0
+            _UpdateFollowActiveNextOnlyUi()
+        EndIf
         If $g_bRecording Then
             _StopRecording(True)
-            MsgBox(48, "winZoom", "Le mode 'Suivre la souris' n'est pas compatible avec l'enregistrement de zone fixe.")
+            MsgBox(48, "DesktopRender", "Le mode 'Suivre la souris' n'est pas compatible avec l'enregistrement de zone fixe.")
         EndIf
     EndIf
     _UpdateInfo()
@@ -310,16 +348,22 @@ Func _OnToggleFollowActive()
         If $g_idChkFollowMouse <> 0 Then GUICtrlSetState($g_idChkFollowMouse, $GUI_UNCHECKED)
         If $g_bRecording Then
             _StopRecording(True)
-            MsgBox(48, "winZoom", "Le mode 'Suivre la fenetre active' n'est pas compatible avec l'enregistrement de zone fixe.")
+            MsgBox(48, "DesktopRender", "Le mode 'Suivre la fenetre active' n'est pas compatible avec l'enregistrement de zone fixe.")
         EndIf
+        $g_hFollowActiveTarget = 0
+        _UpdateFollowActiveNextOnlyUi()
         _UpdateFollowActiveWindowRegion()
+    Else
+        $g_hFollowActiveTarget = 0
+        _UpdateFollowActiveNextOnlyUi()
     EndIf
     _UpdateInfo()
     _SaveAllSettingsToIni()
 EndFunc
 
-Func _OnTogglePreviewPopup()
-    _ApplyPreviewStyle()
+Func _OnToggleFollowActiveNextOnly()
+    $g_hFollowActiveTarget = 0
+    _UpdateInfo()
     _SaveAllSettingsToIni()
 EndFunc
 
@@ -331,14 +375,7 @@ Func _PickRegion()
     Local $iOldH = $g_iSelH
     $g_bPaused = True
     GUICtrlSetData($g_idBtnPause, "Reprendre")
-    WinSetState($g_hMain, "", @SW_HIDE)
-    Sleep(180)
-
     Local $aRegion = _SelectScreenRegion()
-
-    WinSetState($g_hMain, "", @SW_SHOW)
-    WinActivate($g_hMain)
-    _ApplyWindowAffinity($g_hMain)
 
     If Not IsArray($aRegion) Then
         $g_iSelX = $iOldX
@@ -363,6 +400,10 @@ Func _PickRegion()
     $g_iSelY = $aRegion[1]
     $g_iSelW = $aRegion[2]
     $g_iSelH = $aRegion[3]
+    If $g_idChkFollowMouse <> 0 Then GUICtrlSetState($g_idChkFollowMouse, $GUI_UNCHECKED)
+    If $g_idChkFollowActive <> 0 Then GUICtrlSetState($g_idChkFollowActive, $GUI_UNCHECKED)
+    $g_hFollowActiveTarget = 0
+    _UpdateFollowActiveNextOnlyUi()
     _SaveAllSettingsToIni()
     $g_bPaused = False
     GUICtrlSetData($g_idBtnPause, "Pause")
@@ -405,7 +446,8 @@ Func _LoadUiSettingsFromIni()
     $g_bCfgAffinity = Int(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "affinity", "1")) <> 0
     $g_bCfgFollowMouse = Int(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "follow_mouse", "0")) <> 0
     $g_bCfgFollowActive = Int(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "follow_active", "0")) <> 0
-    $g_bCfgPreviewPopup = Int(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "preview_popup", "0")) <> 0
+    $g_bCfgFollowActiveNextOnly = Int(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "follow_active_next_only", "1")) <> 0
+    $g_iFps = _NormalizeFps(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "fps", String($DEFAULT_FPS)))
     $g_sCfgProfile = _NormalizeProfileName(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "profil", "Whatsapp"))
     _LoadRecordProfileFromIni($g_sCfgProfile)
     $g_iCfgMainX = Int(IniRead($SETTINGS_INI, $SETTINGS_UI_SECTION, "main_x", "-1"))
@@ -430,7 +472,8 @@ Func _SaveAllSettingsToIni()
     IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "affinity", _CheckedToInt($g_idChkAffinity))
     IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "follow_mouse", _CheckedToInt($g_idChkFollowMouse))
     IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "follow_active", _CheckedToInt($g_idChkFollowActive))
-    IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "preview_popup", _CheckedToInt($g_idChkPreviewPopup))
+    IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "follow_active_next_only", _CheckedToInt($g_idChkFollowActiveNextOnly))
+    IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "fps", $g_iFps)
     IniWrite($SETTINGS_INI, $SETTINGS_UI_SECTION, "profil", $g_sCfgProfile)
 
     Local $aMain = WinGetPos($g_hMain)
@@ -458,6 +501,56 @@ Func _CheckedToInt($idCtrl)
     Return 0
 EndFunc
 
+Func _UpdateFollowActiveNextOnlyUi()
+    If $g_idChkFollowActiveNextOnly = 0 Then Return
+
+    Local $bFollowActiveEnabled = False
+    If $g_idChkFollowActive <> 0 And GUICtrlRead($g_idChkFollowActive) = $GUI_CHECKED Then $bFollowActiveEnabled = True
+
+    If $bFollowActiveEnabled Then
+        GUICtrlSetState($g_idChkFollowActiveNextOnly, $GUI_ENABLE)
+    Else
+        GUICtrlSetState($g_idChkFollowActiveNextOnly, $GUI_CHECKED)
+        GUICtrlSetState($g_idChkFollowActiveNextOnly, $GUI_DISABLE)
+    EndIf
+EndFunc
+
+Func _SetRecordingUiLock($bLocked)
+    Local $iState = $GUI_ENABLE
+    If $bLocked Then $iState = $GUI_DISABLE
+
+    If $g_idBtnSelect <> 0 Then GUICtrlSetState($g_idBtnSelect, $iState)
+    If $g_idBtnPause <> 0 Then GUICtrlSetState($g_idBtnPause, $iState)
+    If $g_idBtnRecordings <> 0 Then GUICtrlSetState($g_idBtnRecordings, $iState)
+    If $g_idCmbProfile <> 0 Then GUICtrlSetState($g_idCmbProfile, $iState)
+    If $g_idCmbFps <> 0 Then GUICtrlSetState($g_idCmbFps, $iState)
+    If $g_idChkTop <> 0 Then GUICtrlSetState($g_idChkTop, $iState)
+    If $g_idChkAffinity <> 0 Then GUICtrlSetState($g_idChkAffinity, $iState)
+    If $g_idChkFollowMouse <> 0 Then GUICtrlSetState($g_idChkFollowMouse, $iState)
+    If $g_idChkFollowActive <> 0 Then GUICtrlSetState($g_idChkFollowActive, $iState)
+
+    If $bLocked Then
+        If $g_idChkFollowActiveNextOnly <> 0 Then GUICtrlSetState($g_idChkFollowActiveNextOnly, $GUI_DISABLE)
+        If $g_idBtnRecord <> 0 Then GUICtrlSetState($g_idBtnRecord, $GUI_ENABLE)
+        Return
+    EndIf
+
+    _UpdateFollowActiveNextOnlyUi()
+    If $g_idBtnRecord <> 0 Then GUICtrlSetState($g_idBtnRecord, $GUI_ENABLE)
+EndFunc
+
+Func _GetValidFollowActiveHandle()
+    Local $hActive = WinGetHandle("[ACTIVE]")
+    If $hActive = 0 Then Return 0
+    If $hActive = $g_hMain Or $hActive = $g_hPreview Then Return 0
+
+    Local $aPos = WinGetPos($hActive)
+    If @error Or Not IsArray($aPos) Then Return 0
+    If $aPos[2] <= 0 Or $aPos[3] <= 0 Then Return 0
+
+    Return $hActive
+EndFunc
+
 Func _NormalizeRecordFormat($sFormat)
     $sFormat = StringLower(StringStripWS($sFormat, 3))
     Switch $sFormat
@@ -465,6 +558,19 @@ Func _NormalizeRecordFormat($sFormat)
             Return $sFormat
     EndSwitch
     Return "mkv"
+EndFunc
+
+Func _NormalizeFps($vFps)
+    Local $iFps = Int($vFps)
+    Switch $iFps
+        Case 10, 24, 30, 60
+            Return $iFps
+    EndSwitch
+    Return $DEFAULT_FPS
+EndFunc
+
+Func _GetRefreshIntervalMs()
+    Return Int(1000 / $g_iFps)
 EndFunc
 
 Func _NormalizeRecordCodec($sCodec)
@@ -556,25 +662,6 @@ Func _SetPreviewClientSize($iClientW, $iClientH, $iX = Default, $iY = Default)
     WinMove($g_hPreview, "", $iX, $iY, $aSize[0], $aSize[1])
 EndFunc
 
-Func _ApplyPreviewStyle()
-    If $g_hPreview = 0 Then Return
-
-    Local $aPos = WinGetPos($g_hPreview)
-    Local $aClient = WinGetClientSize($g_hPreview)
-    If @error Or Not IsArray($aPos) Or Not IsArray($aClient) Then Return
-
-    Local $iStyle = $PREVIEW_STYLE_NORMAL
-    If $g_idChkPreviewPopup <> 0 And GUICtrlRead($g_idChkPreviewPopup) = $GUI_CHECKED Then
-        $iStyle = $PREVIEW_STYLE_POPUP
-    EndIf
-
-    _WinAPI_SetWindowLong($g_hPreview, $GWL_STYLE, $iStyle)
-    _WinAPI_SetWindowPos($g_hPreview, 0, 0, 0, 0, 0, BitOR($SWP_NOMOVE, $SWP_NOSIZE, $SWP_NOZORDER))
-    _SetPreviewClientSize($aClient[0], $aClient[1], $aPos[0], $aPos[1])
-	WinSetState($g_hPreview, "", @SW_SHOW)
-    If GUICtrlRead($g_idChkTop) = $GUI_CHECKED Then WinSetOnTop($g_hPreview, "", 1)
-EndFunc
-
 Func _GetWindowSizeForClient($iClientW, $iClientH, $iStyle, $iExStyle)
     Local $tRect = DllStructCreate($tagRECT)
     DllStructSetData($tRect, "Left", 0)
@@ -601,31 +688,31 @@ EndFunc
 
 Func _StartRecording()
     If $g_iSelW <= 0 Or $g_iSelH <= 0 Then
-        MsgBox(48, "winZoom", "Definis d'abord une zone a enregistrer.")
+        MsgBox(48, "DesktopRender", "Definis d'abord une zone a enregistrer.")
         Return
     EndIf
 
     If ($g_idChkFollowMouse <> 0 And GUICtrlRead($g_idChkFollowMouse) = $GUI_CHECKED) Or _
        ($g_idChkFollowActive <> 0 And GUICtrlRead($g_idChkFollowActive) = $GUI_CHECKED) Then
-        MsgBox(48, "winZoom", "Desactive le suivi souris ou fenetre avant de demarrer un enregistrement.")
+        MsgBox(48, "DesktopRender", "Desactive le suivi souris ou fenetre avant de demarrer un enregistrement.")
         Return
     EndIf
 
     Local $sFfmpeg = _ResolveFfmpegPath()
     If $sFfmpeg = "" Then
-        MsgBox(48, "winZoom", "ffmpeg.exe introuvable. Place ffmpeg.exe a cote du script ou ajoute-le au PATH Windows.")
+        MsgBox(48, "DesktopRender", "ffmpeg.exe introuvable. Place ffmpeg.exe a cote du script ou ajoute-le au PATH Windows.")
         Return
     EndIf
 
     DirCreate($RECORDINGS_DIR)
-    $g_sRecordingFile = $RECORDINGS_DIR & "\winZoom_" & @YEAR & "-" & StringFormat("%02d", @MON) & "-" & StringFormat("%02d", @MDAY) & "_" & _
+    $g_sRecordingFile = $RECORDINGS_DIR & "\DesktopRender_" & @YEAR & "-" & StringFormat("%02d", @MON) & "-" & StringFormat("%02d", @MDAY) & "_" & _
         StringFormat("%02d", @HOUR) & "-" & StringFormat("%02d", @MIN) & "-" & StringFormat("%02d", @SEC) & "." & $g_sCfgRecordFormat
     Local $iVideoW = _GetEvenVideoSize($g_iSelW)
     Local $iVideoH = _GetEvenVideoSize($g_iSelH)
 
     Local $sCmd = '"' & $sFfmpeg & '"' & _
         " -hide_banner -loglevel error -y" & _
-        " -f gdigrab -framerate " & $FFMPEG_FRAME_RATE & _
+        " -f gdigrab -framerate " & $g_iFps & _
         " -offset_x " & $g_iSelX & _
         " -offset_y " & $g_iSelY & _
         " -video_size " & $iVideoW & "x" & $iVideoH & _
@@ -637,12 +724,13 @@ Func _StartRecording()
     $g_iRecordingPid = Run($sCmd, @ScriptDir, @SW_HIDE, $STDIN_CHILD + $STDERR_CHILD + $STDOUT_CHILD)
     If $g_iRecordingPid = 0 Then
         $g_sRecordingFile = ""
-        MsgBox(16, "winZoom", "Impossible de demarrer ffmpeg.")
+        MsgBox(16, "DesktopRender", "Impossible de demarrer ffmpeg.")
         Return
     EndIf
 
     $g_bRecording = True
     GUICtrlSetData($g_idBtnRecord, "Arreter")
+    _SetRecordingUiLock(True)
     _UpdateRecordingInfo()
 EndFunc
 
@@ -663,10 +751,11 @@ Func _StopRecording($bShowMessage = True)
     $g_bRecording = False
     $g_iRecordingPid = 0
     GUICtrlSetData($g_idBtnRecord, "Enregistrer")
+    _SetRecordingUiLock(False)
     _UpdateRecordingInfo()
 
     If $bShowMessage And $g_sRecordingFile <> "" Then
-        MsgBox(64, "winZoom", "Enregistrement termine :" & @CRLF & $g_sRecordingFile)
+        MsgBox(64, "DesktopRender", "Enregistrement termine :" & @CRLF & $g_sRecordingFile)
     EndIf
 EndFunc
 
@@ -677,15 +766,16 @@ Func _EnsureRecordingProcessAlive()
     $g_bRecording = False
     $g_iRecordingPid = 0
     GUICtrlSetData($g_idBtnRecord, "Enregistrer")
+    _SetRecordingUiLock(False)
     _UpdateRecordingInfo()
-    MsgBox(16, "winZoom", "L'enregistrement s'est arrete de maniere inattendue.")
+    MsgBox(16, "DesktopRender", "L'enregistrement s'est arrete de maniere inattendue.")
 EndFunc
 
 Func _UpdateRecordingInfo()
     If $g_idLblRecord = 0 Then Return
 
     If $g_bRecording Then
-        GUICtrlSetData($g_idLblRecord, "Profil : " & $g_sCfgProfile & " | Fichier video : " & $g_sRecordingFile)
+        GUICtrlSetData($g_idLblRecord, "Profil : " & $g_sCfgProfile & " | Video : enregistrement en cours...")
     Else
         GUICtrlSetData($g_idLblRecord, "Profil : " & $g_sCfgProfile & " | Video : inactive")
     EndIf
@@ -736,9 +826,24 @@ Func _UpdateFollowActiveWindowRegion()
     If $g_idChkFollowActive = 0 Then Return
     If GUICtrlRead($g_idChkFollowActive) <> $GUI_CHECKED Then Return
 
-    Local $hActive = WinGetHandle("[ACTIVE]")
+    Local $hActive = 0
+    Local $bNextOnly = False
+    If $g_idChkFollowActiveNextOnly <> 0 And GUICtrlRead($g_idChkFollowActiveNextOnly) = $GUI_CHECKED Then $bNextOnly = True
+
+    If $bNextOnly Then
+        If $g_hFollowActiveTarget <> 0 And Not WinExists($g_hFollowActiveTarget) Then
+            $g_hFollowActiveTarget = 0
+            _UpdateInfo()
+        EndIf
+        If $g_hFollowActiveTarget = 0 Then $g_hFollowActiveTarget = _GetValidFollowActiveHandle()
+        $hActive = $g_hFollowActiveTarget
+    Else
+        $g_hFollowActiveTarget = 0
+        $hActive = _GetValidFollowActiveHandle()
+    EndIf
+
     If $hActive = 0 Then Return
-    If $hActive = $g_hMain Or $hActive = $g_hPreview Then Return
+    If $bNextOnly And $g_hFollowActiveTarget = $hActive Then _UpdateInfo()
 
     Local $aPos = WinGetPos($hActive)
     If @error Or Not IsArray($aPos) Then Return
@@ -919,7 +1024,23 @@ Func _UpdateSelectionGuides($hOverlay, $hCenter, $idV1, $idV2, $idH1, $idH2, $iV
 EndFunc
 
 Func _HitTestSelectionGuide($iMouseX, $iMouseY, $iV1, $iV2, $iH1, $iH2, $iHitSize)
-    If $iMouseX >= $iV1 And $iMouseX <= $iV2 And $iMouseY >= $iH1 And $iMouseY <= $iH2 Then Return 9
+    If $iMouseX >= $iV1 And $iMouseX <= $iV2 And $iMouseY >= $iH1 And $iMouseY <= $iH2 Then
+        Local $iMargin = 4
+        Local $bNearLeft = ($iMouseX - $iV1) <= $iMargin
+        Local $bNearRight = ($iV2 - $iMouseX) <= $iMargin
+        Local $bNearTop = ($iMouseY - $iH1) <= $iMargin
+        Local $bNearBottom = ($iH2 - $iMouseY) <= $iMargin
+
+        If $bNearLeft And $bNearTop Then Return 5
+        If $bNearRight And $bNearTop Then Return 6
+        If $bNearLeft And $bNearBottom Then Return 7
+        If $bNearRight And $bNearBottom Then Return 8
+        If $bNearLeft Then Return 1
+        If $bNearRight Then Return 2
+        If $bNearTop Then Return 3
+        If $bNearBottom Then Return 4
+        Return 9
+    EndIf
     If $iMouseX < $iV1 And $iMouseY < $iH1 Then Return 5
     If $iMouseX > $iV2 And $iMouseY < $iH1 Then Return 6
     If $iMouseX < $iV1 And $iMouseY > $iH2 Then Return 7
