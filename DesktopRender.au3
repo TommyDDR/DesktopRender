@@ -418,13 +418,18 @@ Func _LoadSelectionFromIni()
     Local $iY = Int(IniRead($SETTINGS_INI, $SETTINGS_SECTION, "y", "-1"))
     Local $iW = Int(IniRead($SETTINGS_INI, $SETTINGS_SECTION, "w", "0"))
     Local $iH = Int(IniRead($SETTINGS_INI, $SETTINGS_SECTION, "h", "0"))
+    Local $aDesktop = _GetVirtualDesktopRect()
+    Local $iMinX = $aDesktop[0]
+    Local $iMinY = $aDesktop[1]
+    Local $iMaxX = $aDesktop[0] + $aDesktop[2]
+    Local $iMaxY = $aDesktop[1] + $aDesktop[3]
 
     If $iW <= 0 Or $iH <= 0 Then Return
-    If $iX < 0 Then $iX = 0
-    If $iY < 0 Then $iY = 0
-    If $iX >= @DesktopWidth Or $iY >= @DesktopHeight Then Return
-    If ($iX + $iW) > @DesktopWidth Then $iW = @DesktopWidth - $iX
-    If ($iY + $iH) > @DesktopHeight Then $iH = @DesktopHeight - $iY
+    If $iX < $iMinX Then $iX = $iMinX
+    If $iY < $iMinY Then $iY = $iMinY
+    If $iX >= $iMaxX Or $iY >= $iMaxY Then Return
+    If ($iX + $iW) > $iMaxX Then $iW = $iMaxX - $iX
+    If ($iY + $iH) > $iMaxY Then $iH = $iMaxY - $iY
     If $iW <= 0 Or $iH <= 0 Then Return
 
     $g_iSelX = $iX
@@ -622,11 +627,12 @@ EndFunc
 Func _ResizeMainToRegion()
     Local $iWidth = $g_iSelW
     Local $iHeight = $g_iSelH
+    Local $aDesktop = _GetVirtualDesktopRect()
 
     If $iWidth < 160 Then $iWidth = 160
     If $iHeight < 120 Then $iHeight = 120
-    If $iWidth > @DesktopWidth - 60 Then $iWidth = @DesktopWidth - 60
-    If $iHeight > @DesktopHeight - 60 Then $iHeight = @DesktopHeight - 60
+    If $iWidth > $aDesktop[2] - 60 Then $iWidth = $aDesktop[2] - 60
+    If $iHeight > $aDesktop[3] - 60 Then $iHeight = $aDesktop[3] - 60
 
     If $g_hPreview <> 0 Then
         Local $aPreview = WinGetPos($g_hPreview)
@@ -810,16 +816,21 @@ Func _UpdateFollowMouseRegion()
     If GUICtrlRead($g_idChkFollowMouse) <> $GUI_CHECKED Then Return
 
     Local $aMouse = MouseGetPos()
+    Local $aDesktop = _GetVirtualDesktopRect()
+    Local $iMinX = $aDesktop[0]
+    Local $iMinY = $aDesktop[1]
+    Local $iMaxX = $aDesktop[0] + $aDesktop[2]
+    Local $iMaxY = $aDesktop[1] + $aDesktop[3]
     Local $iHalfW = Int($g_iSelW / 2)
     Local $iHalfH = Int($g_iSelH / 2)
 
     $g_iSelX = $aMouse[0] - $iHalfW
     $g_iSelY = $aMouse[1] - $iHalfH
 
-    If ($g_iSelX + $g_iSelW) > @DesktopWidth Then $g_iSelX = @DesktopWidth - $g_iSelW
-    If ($g_iSelY + $g_iSelH) > @DesktopHeight Then $g_iSelY = @DesktopHeight - $g_iSelH
-    If $g_iSelX < 0 Then $g_iSelX = 0
-    If $g_iSelY < 0 Then $g_iSelY = 0
+    If ($g_iSelX + $g_iSelW) > $iMaxX Then $g_iSelX = $iMaxX - $g_iSelW
+    If ($g_iSelY + $g_iSelH) > $iMaxY Then $g_iSelY = $iMaxY - $g_iSelH
+    If $g_iSelX < $iMinX Then $g_iSelX = $iMinX
+    If $g_iSelY < $iMinY Then $g_iSelY = $iMinY
 EndFunc
 
 Func _UpdateFollowActiveWindowRegion()
@@ -848,22 +859,27 @@ Func _UpdateFollowActiveWindowRegion()
     Local $aPos = WinGetPos($hActive)
     If @error Or Not IsArray($aPos) Then Return
     If $aPos[2] <= 0 Or $aPos[3] <= 0 Then Return
+    Local $aDesktop = _GetVirtualDesktopRect()
+    Local $iMinX = $aDesktop[0]
+    Local $iMinY = $aDesktop[1]
+    Local $iMaxX = $aDesktop[0] + $aDesktop[2]
+    Local $iMaxY = $aDesktop[1] + $aDesktop[3]
 
     $g_iSelX = $aPos[0]
     $g_iSelY = $aPos[1]
     $g_iSelW = $aPos[2]
     $g_iSelH = $aPos[3]
 
-    If $g_iSelX < 0 Then
-        $g_iSelW += $g_iSelX
-        $g_iSelX = 0
+    If $g_iSelX < $iMinX Then
+        $g_iSelW -= ($iMinX - $g_iSelX)
+        $g_iSelX = $iMinX
     EndIf
-    If $g_iSelY < 0 Then
-        $g_iSelH += $g_iSelY
-        $g_iSelY = 0
+    If $g_iSelY < $iMinY Then
+        $g_iSelH -= ($iMinY - $g_iSelY)
+        $g_iSelY = $iMinY
     EndIf
-    If ($g_iSelX + $g_iSelW) > @DesktopWidth Then $g_iSelW = @DesktopWidth - $g_iSelX
-    If ($g_iSelY + $g_iSelH) > @DesktopHeight Then $g_iSelH = @DesktopHeight - $g_iSelY
+    If ($g_iSelX + $g_iSelW) > $iMaxX Then $g_iSelW = $iMaxX - $g_iSelX
+    If ($g_iSelY + $g_iSelH) > $iMaxY Then $g_iSelH = $iMaxY - $g_iSelY
     If $g_iSelW <= 0 Or $g_iSelH <= 0 Then Return
 
     _ResizeMainToRegion()
@@ -886,16 +902,20 @@ Func _SelectScreenRegion()
     Local Const $iLineSize = 5
     Local Const $iHitSize = 14
     Local Const $iMinZone = 80
-    Local Const $iMargin = 0
+    Local $aDesktop = _GetVirtualDesktopRect()
+    Local $iMinX = $aDesktop[0]
+    Local $iMinY = $aDesktop[1]
+    Local $iMaxX = $aDesktop[0] + $aDesktop[2] - 1
+    Local $iMaxY = $aDesktop[1] + $aDesktop[3] - 1
 
-    Local $hOverlay = GUICreate("Selection", @DesktopWidth, @DesktopHeight, 0, 0, $WS_POPUP, BitOR($WS_EX_TOPMOST, $WS_EX_TOOLWINDOW))
+    Local $hOverlay = GUICreate("Selection", $aDesktop[2], $aDesktop[3], $iMinX, $iMinY, $WS_POPUP, BitOR($WS_EX_TOPMOST, $WS_EX_TOOLWINDOW))
     GUISetBkColor(0x000000, $hOverlay)
     WinSetTrans($hOverlay, "", 80)
 
-    Local $idV1 = GUICtrlCreateLabel("", 0, 0, $iLineSize, @DesktopHeight)
-    Local $idV2 = GUICtrlCreateLabel("", 0, 0, $iLineSize, @DesktopHeight)
-    Local $idH1 = GUICtrlCreateLabel("", 0, 0, @DesktopWidth, $iLineSize)
-    Local $idH2 = GUICtrlCreateLabel("", 0, 0, @DesktopWidth, $iLineSize)
+    Local $idV1 = GUICtrlCreateLabel("", 0, 0, $iLineSize, $aDesktop[3])
+    Local $idV2 = GUICtrlCreateLabel("", 0, 0, $iLineSize, $aDesktop[3])
+    Local $idH1 = GUICtrlCreateLabel("", 0, 0, $aDesktop[2], $iLineSize)
+    Local $idH2 = GUICtrlCreateLabel("", 0, 0, $aDesktop[2], $iLineSize)
 
     GUICtrlSetBkColor($idV1, 0x00D8FF)
     GUICtrlSetBkColor($idV2, 0x00D8FF)
@@ -906,10 +926,10 @@ Func _SelectScreenRegion()
     GUISetBkColor(0xFFFFFF, $hCenter)
     WinSetTrans($hCenter, "", 16)
 
-    Local $iV1 = Int(@DesktopWidth / 3)
-    Local $iV2 = Int((@DesktopWidth * 2) / 3)
-    Local $iH1 = Int(@DesktopHeight / 3)
-    Local $iH2 = Int((@DesktopHeight * 2) / 3)
+    Local $iV1 = $iMinX + Int($aDesktop[2] / 3)
+    Local $iV2 = $iMinX + Int(($aDesktop[2] * 2) / 3)
+    Local $iH1 = $iMinY + Int($aDesktop[3] / 3)
+    Local $iH2 = $iMinY + Int(($aDesktop[3] * 2) / 3)
 
     If $g_iSelW > 0 And $g_iSelH > 0 Then
         $iV1 = $g_iSelX
@@ -950,30 +970,30 @@ Func _SelectScreenRegion()
 
             Switch $iDragMode
                 Case 1
-                    $iV1 = _Clamp($aMouse[0], $iMargin, $iV2 - ($iMinZone - 1))
+                    $iV1 = _Clamp($aMouse[0], $iMinX, $iV2 - ($iMinZone - 1))
                 Case 2
-                    $iV2 = _Clamp($aMouse[0], $iV1 + ($iMinZone - 1), (@DesktopWidth - 1) - $iMargin)
+                    $iV2 = _Clamp($aMouse[0], $iV1 + ($iMinZone - 1), $iMaxX)
                 Case 3
-                    $iH1 = _Clamp($aMouse[1], $iMargin, $iH2 - ($iMinZone - 1))
+                    $iH1 = _Clamp($aMouse[1], $iMinY, $iH2 - ($iMinZone - 1))
                 Case 4
-                    $iH2 = _Clamp($aMouse[1], $iH1 + ($iMinZone - 1), (@DesktopHeight - 1) - $iMargin)
+                    $iH2 = _Clamp($aMouse[1], $iH1 + ($iMinZone - 1), $iMaxY)
                 Case 5
-                    $iV1 = _Clamp($aMouse[0], $iMargin, $iV2 - ($iMinZone - 1))
-                    $iH1 = _Clamp($aMouse[1], $iMargin, $iH2 - ($iMinZone - 1))
+                    $iV1 = _Clamp($aMouse[0], $iMinX, $iV2 - ($iMinZone - 1))
+                    $iH1 = _Clamp($aMouse[1], $iMinY, $iH2 - ($iMinZone - 1))
                 Case 6
-                    $iV2 = _Clamp($aMouse[0], $iV1 + ($iMinZone - 1), (@DesktopWidth - 1) - $iMargin)
-                    $iH1 = _Clamp($aMouse[1], $iMargin, $iH2 - ($iMinZone - 1))
+                    $iV2 = _Clamp($aMouse[0], $iV1 + ($iMinZone - 1), $iMaxX)
+                    $iH1 = _Clamp($aMouse[1], $iMinY, $iH2 - ($iMinZone - 1))
                 Case 7
-                    $iV1 = _Clamp($aMouse[0], $iMargin, $iV2 - ($iMinZone - 1))
-                    $iH2 = _Clamp($aMouse[1], $iH1 + ($iMinZone - 1), (@DesktopHeight - 1) - $iMargin)
+                    $iV1 = _Clamp($aMouse[0], $iMinX, $iV2 - ($iMinZone - 1))
+                    $iH2 = _Clamp($aMouse[1], $iH1 + ($iMinZone - 1), $iMaxY)
                 Case 8
-                    $iV2 = _Clamp($aMouse[0], $iV1 + ($iMinZone - 1), (@DesktopWidth - 1) - $iMargin)
-                    $iH2 = _Clamp($aMouse[1], $iH1 + ($iMinZone - 1), (@DesktopHeight - 1) - $iMargin)
+                    $iV2 = _Clamp($aMouse[0], $iV1 + ($iMinZone - 1), $iMaxX)
+                    $iH2 = _Clamp($aMouse[1], $iH1 + ($iMinZone - 1), $iMaxY)
                 Case 9
                     Local $iZoneW = $iV2 - $iV1
                     Local $iZoneH = $iH2 - $iH1
-                    Local $iNewV1 = _Clamp($aMouse[0] - $iDragOffsetX, $iMargin, (@DesktopWidth - 1) - $iMargin - $iZoneW)
-                    Local $iNewH1 = _Clamp($aMouse[1] - $iDragOffsetY, $iMargin, (@DesktopHeight - 1) - $iMargin - $iZoneH)
+                    Local $iNewV1 = _Clamp($aMouse[0] - $iDragOffsetX, $iMinX, $iMaxX - $iZoneW)
+                    Local $iNewH1 = _Clamp($aMouse[1] - $iDragOffsetY, $iMinY, $iMaxY - $iZoneH)
                     $iV1 = $iNewV1
                     $iV2 = $iNewV1 + $iZoneW
                     $iH1 = $iNewH1
@@ -1015,12 +1035,43 @@ Func _PreviewSelectionRegion($iV1, $iV2, $iH1, $iH2)
 EndFunc
 
 Func _UpdateSelectionGuides($hOverlay, $hCenter, $idV1, $idV2, $idH1, $idH2, $iV1, $iV2, $iH1, $iH2)
-    GUICtrlSetPos($idV1, $iV1 - 5, 0, 5, @DesktopHeight)
-    GUICtrlSetPos($idV2, $iV2, 0, 5, @DesktopHeight)
-    GUICtrlSetPos($idH1, 0, $iH1 - 5, @DesktopWidth, 5)
-    GUICtrlSetPos($idH2, 0, $iH2, @DesktopWidth, 5)
-    _ApplySelectionHole($hOverlay, $iV1, $iH1, ($iV2 - $iV1) + 1, ($iH2 - $iH1) + 1)
+    Local $aDesktop = _GetVirtualDesktopRect()
+    Local $iLocalX1 = $iV1 - $aDesktop[0]
+    Local $iLocalX2 = $iV2 - $aDesktop[0]
+    Local $iLocalY1 = $iH1 - $aDesktop[1]
+    Local $iLocalY2 = $iH2 - $aDesktop[1]
+
+    GUICtrlSetPos($idV1, $iLocalX1 - 5, 0, 5, $aDesktop[3])
+    GUICtrlSetPos($idV2, $iLocalX2, 0, 5, $aDesktop[3])
+    GUICtrlSetPos($idH1, 0, $iLocalY1 - 5, $aDesktop[2], 5)
+    GUICtrlSetPos($idH2, 0, $iLocalY2, $aDesktop[2], 5)
+    _ApplySelectionHole($hOverlay, $iLocalX1, $iLocalY1, ($iV2 - $iV1) + 1, ($iH2 - $iH1) + 1)
     WinMove($hCenter, "", $iV1, $iH1, ($iV2 - $iV1) + 1, ($iH2 - $iH1) + 1)
+EndFunc
+
+Func _GetVirtualDesktopRect()
+    Local $aRect[4]
+    $aRect[0] = _GetSystemMetric($SM_XVIRTUALSCREEN)
+    $aRect[1] = _GetSystemMetric($SM_YVIRTUALSCREEN)
+    $aRect[2] = _GetSystemMetric($SM_CXVIRTUALSCREEN)
+    $aRect[3] = _GetSystemMetric($SM_CYVIRTUALSCREEN)
+
+    If $aRect[2] <= 0 Then
+        $aRect[0] = 0
+        $aRect[2] = @DesktopWidth
+    EndIf
+    If $aRect[3] <= 0 Then
+        $aRect[1] = 0
+        $aRect[3] = @DesktopHeight
+    EndIf
+
+    Return $aRect
+EndFunc
+
+Func _GetSystemMetric($iIndex)
+    Local $aResult = DllCall("user32.dll", "int", "GetSystemMetrics", "int", $iIndex)
+    If @error Or Not IsArray($aResult) Then Return 0
+    Return $aResult[0]
 EndFunc
 
 Func _HitTestSelectionGuide($iMouseX, $iMouseY, $iV1, $iV2, $iH1, $iH2, $iHitSize)
